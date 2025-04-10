@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Q4</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="stylesheet" href="css/style_shared.css"> 
+  <div id="global-navigation">
+  </div>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    h2 {
+      padding: 5px;
+      text-align: left;
+      color: black;
+      font-size: 13px;
+    }
+    .bar:hover {
+      opacity: 0.8;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 7px;
+      border-radius: 5px;
+      box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+      font-size: 13px;
+      display: none;
+    }
+    #chart {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-top: 20px;
+    }
+    *{
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <h2>[221124029127] [Đinh Trần Công Nghĩa] [48K29.1]</h2>
+  <div id="chart"></div>
+  <div class="tooltip" id="tooltip"></div>
+
+  <script>
+    const margin = {top: 50, right: 50, bottom: 50, left: 50},
+          width = 1100 - margin.left - margin.right,
+          height = 650 - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+                  .append("svg")
+                  .attr("width", width + margin.left + margin.right)
+                  .attr("height", height + margin.top + margin.bottom)
+                  .append("g")
+                  .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    d3.csv("dataset/data_ggsheet-data.csv").then(rawData => {
+      rawData.forEach(d => {
+        d["Thành tiền"] = +d["Thành tiền"];
+        d["Số lượng"] = +d["Số lượng"]; 
+        d.Ngày = new Date(d["Thời gian tạo đơn"]).getDay(); 
+      });
+
+      const weekdays = ["Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật"];
+      const weekdayOrder = {1: "Thứ Hai", 2: "Thứ Ba", 3: "Thứ Tư", 4: "Thứ Năm", 5: "Thứ Sáu", 6: "Thứ Bảy", 0: "Chủ Nhật"};
+
+      const groupedData = d3.group(rawData, d => d.Ngày);
+
+      const data = Array.from(
+        groupedData, 
+        ([ngay, orders]) => {
+                      const TongDoanhThu = d3.sum(orders, d => d["Thành tiền"]);
+                      const TongSoLuong = d3.sum(orders, d => d["SL"]); 
+                      const Count_of_DayWeek = new Set(orders.map(d => d["Thời gian tạo đơn"].split(" ")[0])).size; 
+                      const doanhthuTB = Count_of_DayWeek > 0 ? TongDoanhThu / Count_of_DayWeek : 0;
+                      const soluongTB = Count_of_DayWeek > 0 ? TongSoLuong / Count_of_DayWeek : 0;
+                      
+                      return { 
+                        Ngày: weekdayOrder[ngay], 
+                        doanhthuTB, 
+                        soluongTB };
+                        });
+
+      data.sort((a, b) => weekdays.indexOf(a.Ngày) - weekdays.indexOf(b.Ngày));
+
+      const color = d3.scaleOrdinal(d3.schemeTableau10);
+
+      const x = d3.scaleBand()
+                  .domain(data.map(d => d.Ngày))
+                  .range([0, width])
+                  .padding(0.2);
+
+      const y = d3.scaleLinear()
+                  .domain([0, d3.max(data, d => d.doanhthuTB)])
+                  .nice()
+                  .range([height, 0]);
+
+      svg.append("text")
+        .attr("x", width / 2)  
+        .attr("y", -30)  
+        .attr("text-anchor", "middle")  
+        .style("font-size", "20px")  
+        .style("fill", "#4e79a7")  
+        .style("font-weight", "bold")  
+        .text("Doanh số bán hàng theo Ngày trong tuần");
+      
+      svg.append("g")
+        .attr("class", "grid")
+        .call(d3.axisLeft(y)
+                .ticks(18)
+                .tickSize(-width) 
+                .tickFormat(""))   
+        .selectAll("line")
+        .attr("stroke", "#ccc")    
+        .attr("stroke-opacity", 0.8); 
+
+      svg.selectAll(".domain").remove();
+
+      svg.append("g")
+        .attr("transform", `translate(0, ${height + 5})`)
+        .call(d3.axisBottom(x)
+                .tickSize(0))
+        .style("font-size", "13px")
+        .selectAll("path, line")
+        .attr("stroke", "none");
+
+      svg.append("g")
+        .call(d3.axisLeft(y)
+                .ticks(18)
+                .tickFormat(d => `${(d / 1_000_000).toFixed(0)}M`))
+        .style("font-size", "13px")
+        .selectAll("path, line")
+        .attr("stroke", "#ccc"); 
+
+      svg.selectAll(".bar")
+        .data(data)
+        .enter()
+        .append("rect")
+        .attr("class", "bar")
+        .attr("x", d => x(d.Ngày))
+        .attr("y", d => y(d.doanhthuTB))
+        .attr("width", x.bandwidth())
+        .attr("height", d => height - y(d.doanhthuTB))
+        .attr("fill", d => color(d.Ngày))
+        .on("mouseover", (event, d) => {
+          tooltip.style("opacity", 1)
+                .style("display", "block")
+                .html(`<strong>${d.Ngày}</strong><br>
+                          Doanh thu bán TB: ${d3.format(",.0f")(d.doanhthuTB )} VND<br>
+                          Số lượng bán TB: ${d3.format(",.0f")(d.soluongTB)} SKUs`)
+                .style("left", `${event.pageX + 10}px`)
+                .style("top", `${event.pageY - 20}px`);
+          })
+        .on("mousemove", event => {
+          tooltip.style("left", `${event.pageX + 10}px`)
+                .style("top", `${event.pageY - 20}px`);
+          })
+        .on("mouseout", () => {
+          tooltip.style("display", "none");
+          });
+
+      svg.selectAll(".label")
+        .data(data)
+        .enter()
+        .append("text")
+        .attr("x", d => x(d.Ngày) + x.bandwidth() / 2)
+        .attr("y", d => y(d.doanhthuTB) - 5)
+        .attr("text-anchor", "middle")
+        .style('font-size','12px')
+        .text(d => `${d3.format(",.0f")(d.doanhthuTB )} VND`);
+
+    }).catch(error => {
+      console.error("Lỗi khi load file CSV:", error);
+    });
+  </script>
+  <script src="js/navigation.js"></script>
+</body>
+</html>

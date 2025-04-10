@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Q11</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="css/style_shared.css"> 
+    <div id="global-navigation">
+    </div>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        h2 {
+            padding: 5px;
+            text-align: left;
+            color: black;
+            font-size: 13px;
+          }
+        .bar:hover {
+            opacity: 0.8;
+          }
+        .tooltip {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 7px;
+            border-radius: 5px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+            font-size: 13px;
+            display: none;
+          }
+        #chart {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 20px;
+          }
+        *{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+    </style>
+</head>
+<body>
+    <h2>[221124029127] [Đinh Trần Công Nghĩa] [48K29.1]</h2>
+    <div id="chart"></div>
+    <div class="tooltip" id="tooltip"></div>
+    <script>
+        const margin = { top: 50, right: 50, bottom: 50, left: 100 },
+              width = 1200 - margin.left - margin.right,
+              height = 600 - margin.top - margin.bottom;
+
+        const svg = d3.select("#chart")
+                      .append("svg")
+                      .attr("width", width + margin.left + margin.right)
+                      .attr("height", height + margin.top + margin.bottom)
+                      .append("g")
+                      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+        const tooltip = d3.select("#tooltip");
+
+        // Hàm điều chỉnh vị trí tooltip
+        function AdjustTooltipPosition(event, tooltip) {
+            const TooltipNode = tooltip.node();
+            const TooltipWidth = TooltipNode.offsetWidth;
+            const TooltipHeight = TooltipNode.offsetHeight;
+            const WindowWidth = window.innerWidth;
+            const WindowHeight = window.innerHeight;
+
+            let left = event.pageX + 15;
+            let top = event.pageY - 10; 
+
+            if (left + TooltipWidth > WindowWidth) {
+                left = event.pageX - TooltipWidth - 15;
+            }
+
+            if (top + TooltipHeight > WindowHeight) {
+                top = event.pageY - TooltipHeight - 10;
+            }
+            tooltip.style("left", `${left}px`)
+                .style("top", `${top}px`);
+        }
+
+        d3.csv("dataset/data_ggsheet-data.csv").then(rawData => {
+            const PurchasesByCustomer = d3.rollups(
+                rawData,
+                v => new Set(v.map(d => d["Mã đơn hàng"])).size,
+                d => d["Mã khách hàng"]
+            );
+
+            const distribution = d3.rollups(
+                PurchasesByCustomer,
+                v => v.length,
+                d => d[1] 
+            );
+
+            const data = distribution.map(([PurchaseCount, CustomerCount]) => ({
+                PurchaseCount: +PurchaseCount,
+                CustomerCount: +CustomerCount
+            })).sort((a, b) => a.PurchaseCount - b.PurchaseCount);
+
+            console.log("Phân phối Lượt mua hàng:", data);
+          
+            const x = d3.scaleBand()
+                        .domain(data.map(d => d.PurchaseCount))
+                        .range([0, width])
+                        .padding(0.1);
+
+            const y = d3.scaleLinear()
+                        .domain([0, d3.max(data, d => d.CustomerCount)])
+                        .nice()
+                        .range([height, 0]);
+                    
+            svg.append("text")
+                .attr("x", width / 2)  
+                .attr("y", -30)  
+                .attr("text-anchor", "middle")  
+                .style("font-size", "20px")  
+                .style("fill", "#4e79a7")  
+                .style("font-weight", "bold")  
+                .text("Phân phối lượt mua hàng");
+
+            svg.append("g")
+                .attr("class", "grid")
+                .call(d3.axisLeft(y)
+                        .tickSize(-width) 
+                        .tickFormat(""))   
+                .selectAll("line")
+                .attr("stroke-dasharray", "4,2")
+                .attr("stroke", "#ccc")    
+                .attr("stroke-opacity", 0.8); 
+
+            svg.selectAll(".domain").remove();
+     
+            svg.append("g")
+                .attr("transform", `translate(0, ${height})`)
+                .call(g => {
+                    g.call(d3.axisBottom(x).tickFormat(d3.format("d")));
+                    g.selectAll("text").style("font-size", "13px");
+                    g.selectAll("path, line").attr("stroke", "#ccc");
+                });
+        
+            svg.append("g")
+               .call(g => {
+                    g.call(d3.axisLeft(y));
+                    g.selectAll("text").style("font-size", "13px");
+                    g.selectAll("path, line").attr("stroke", "#ccc");
+                    g.append("text")        
+                        .attr("transform", "rotate(-90)")
+                        .attr("x", -height / 2)
+                        .attr("y", -margin.left + 50)
+                        .attr("fill", "black")
+                        .attr("text-anchor", "middle")
+                        .style("font-size", "13px")
+                        .text("Số Khách Hàng");
+                });
+
+            svg.selectAll(".bar")
+                .data(data)
+                .join("rect")
+                .attr("class", "bar")
+                .attr("x", d => x(d.PurchaseCount))
+                .attr("y", d => y(d.CustomerCount))
+                .attr("width", x.bandwidth())
+                .attr("height", d => height - y(d.CustomerCount))
+                .attr("fill", "#4e79a7")
+                .on("mouseover", (event, d) => {
+                 tooltip.style("opacity",1)
+                        .style("display","block")
+                        .html(`<strong>Đã mua ${d.PurchaseCount} lần</strong><br/>
+                                Số lượng KH: ${d3.format(",.0f")(d.CustomerCount)}`
+                                );
+                        AdjustTooltipPosition(event, tooltip);
+                })
+                .on("mousemove", event => {
+                    AdjustTooltipPosition(event, tooltip);
+                })
+                .on("mouseout", () => {
+                    tooltip.style("display", "none");
+                });
+
+        }).catch(error => {
+            console.error("Lỗi load dữ liệu:", error);
+        });
+    </script>
+    <script src="js/navigation.js"></script>
+</body>
+</html>

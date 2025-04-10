@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Q6</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="stylesheet" href="css/style_shared.css"> 
+  <div id="global-navigation">
+  </div>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    h2 {
+      padding: 5px;
+      text-align: left;
+      color: black;
+      font-size: 13px;
+    }
+    .bar:hover {
+      opacity: 0.8;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 7px;
+      border-radius: 5px;
+      box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+      font-size: 13px;
+      display: none;
+    }
+    #chart {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-top: 20px;
+    }
+    *{
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <h2>[221124029127] [Đinh Trần Công Nghĩa] [48K29.1]</h2>
+  <div id="chart"></div>
+  <div class="tooltip" id="tooltip"></div>
+  <script>
+    const margin = {top: 50, right: 50, bottom: 50, left: 50},
+          width = 1400 - margin.left - margin.right,
+          height = 650 - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+                  .append("svg")
+                  .attr("width", width + margin.left + margin.right)
+                  .attr("height", height + margin.top + margin.bottom)
+                  .append("g")
+                  .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select("#tooltip");
+
+    // Hàm điều chỉnh vị trí tooltip
+    function AdjustTooltipPosition(event, tooltip) {
+        const TooltipNode = tooltip.node();
+        const TooltipWidth = TooltipNode.offsetWidth;
+        const TooltipHeight = TooltipNode.offsetHeight;
+        const WindowWidth = window.innerWidth;
+        const WindowHeight = window.innerHeight;
+
+        let left = event.pageX + 15;
+        let top = event.pageY - 10; 
+
+        if (left + TooltipWidth > WindowWidth) {
+            left = event.pageX - TooltipWidth - 15;
+        }
+
+        if (top + TooltipHeight > WindowHeight) {
+            top = event.pageY - TooltipHeight - 10;
+        }
+        tooltip.style("left", `${left}px`)
+            .style("top", `${top}px`);
+    }
+    d3.csv("dataset/data_ggsheet-data.csv").then(rawData => {
+      rawData.forEach(d => {
+        d["Thành tiền"] = +d["Thành tiền"];
+        d["Số lượng"] = +d["Số lượng"];
+        let date = new Date(d["Thời gian tạo đơn"]);
+        if (!isNaN(date.getTime())) {
+          d.Tháng = date.getMonth() + 1;
+          d.Giờ = date.getHours();
+          d.Ngày = date.toISOString().split('T')[0];
+        }
+      });
+
+      const timeSlots = Array.from(
+        { length: 24 }, (_, i) => `${i.toString().padStart(2, '0')}:00-${i.toString().padStart(2, '0')}:59`
+        );
+      
+      const filteredData = rawData.filter(
+        d => d.Giờ >= 8 && d.Giờ <= 23
+        );
+      const groupedData = d3.group(filteredData, d => d.Giờ);
+      
+      const data = [];
+      groupedData.forEach((orders, hour) => {
+        const UniqueDays = new Set(orders.map(d => d.Ngày)).size;
+        const doanhthuTB = UniqueDays > 0 ? d3.sum(orders, d => d["Thành tiền"]) / UniqueDays : 0;
+        const soluongTB = UniqueDays > 0 ? d3.sum(orders, d => d["SL"])/ UniqueDays : 0; 
+        data.push({ 
+          KhungGiờ: timeSlots[hour], 
+          doanhthuTB, 
+          soluongTB, 
+          Giờ: hour 
+        });
+      });
+
+      const x = d3.scaleBand()
+                  .domain(timeSlots.slice(8, 24))
+                  .range([0, width])
+                  .padding(0.2);
+
+      const y = d3.scaleLinear()
+                  .domain([0, d3.max(data, d => d.doanhthuTB)])
+                  .nice()
+                  .range([height, 0]);
+
+      const color = d3.scaleOrdinal(d3.schemeTableau10);
+      
+      svg.append("text")
+        .attr("x", width / 2)  
+        .attr("y",-30)  
+        .attr("text-anchor", "middle")  
+        .style("font-size", "20px")  
+        .style("fill", "#4e79a7")  
+        .style("font-weight", "bold")  
+        .text("Doanh số bán hàng trung bình theo Khung giờ");
+        
+      svg.append("g")
+        .attr("class", "grid")
+        .call(d3.axisLeft(y)
+                .ticks(9)
+                .tickSize(-width) 
+                .tickFormat(""))   
+        .selectAll("line")
+        .attr("stroke", "#ccc")    
+        .attr("stroke-opacity", 0.8); 
+
+      svg.selectAll(".domain").remove();
+
+      svg.append("g")
+        .attr("transform", `translate(0, ${height})`)
+        .call(d3.axisBottom(x)
+                .tickSize(0)
+                )
+        .call(g => {
+          g.selectAll("text")
+          .style("text-anchor","middle")
+          .attr("x",0)
+          .attr("y",10)
+          .style("font-size", "12px");
+
+          g.selectAll("path, line")
+          .attr("stroke", "#ccc");
+        });
+
+      svg.append("g")
+        .call(d3.axisLeft(y)
+                .ticks(10)
+                .tickFormat(d => `${(d / 1_000).toFixed(0)}K`))
+        .style("font-size", "13px")
+        .selectAll("path, line")
+        .attr("stroke", "#ccc");
+
+      svg.selectAll(".bar")
+        .data(data)
+        .enter()
+        .append("rect")
+        .attr("class", "bar")
+        .attr("x", d => x(d.KhungGiờ))
+        .attr("y", d => y(d.doanhthuTB))
+        .attr("width", x.bandwidth())
+        .attr("height", d => height - y(d.doanhthuTB))
+        .attr("fill", d => color(d.Giờ))
+        .on("mouseover", (event, d) => {
+          tooltip.style("opacity", 1)
+                .style("display", "block")
+                .html(`<strong>Khung Giờ: ${d.KhungGiờ}</strong><br>
+                        Doanh thu bán TB: ${d3.format(",.0f")(d.doanhthuTB)} VND<br>
+                        Số lượng bán TB: ${d3.format(",.0f")(d.soluongTB)} SKUs`)
+                AdjustTooltipPosition(event, tooltip);
+        })
+        .on("mousemove", event => {
+          AdjustTooltipPosition(event, tooltip);
+        })
+        .on("mouseout", () => {
+          tooltip.style("display", "none");
+        });
+
+      svg.selectAll(".label")
+        .data(data)
+        .enter()
+        .append("text")
+        .attr("class", "label")
+        .attr("x", d => x(d.KhungGiờ) + x.bandwidth() / 2)
+        .attr("y", d => y(d.doanhthuTB) - 5)
+        .attr("text-anchor", "middle")
+        .style ('font-size','12px')
+        .text(d => d3.format(",.0f")(d.doanhthuTB) + " VND");
+
+    }).catch(error => {
+      console.error("Lỗi khi load file CSV:", error);
+    });
+  </script>
+  <script src="js/navigation.js"></script>
+</body>
+</html>

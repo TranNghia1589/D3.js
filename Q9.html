@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Q9</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="css/style_shared.css">
+    <div id="global-navigation"></div>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h2 {
+            text-align: center;
+            color: #fff; 
+            background-color: #4e79a7; 
+            padding: 10px 0;
+            width: 1480px; 
+            max-width: 100%; 
+        }
+        .chart-container {
+            text-align: center;
+            margin-bottom: 20px; 
+        }
+        .chart-title {
+            font-size: 18px; 
+            font-weight: bold;
+            text-align: center;
+            color: #4e79a7; 
+            height: 20px; 
+            overflow: hidden; 
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .chart-row {
+            display: flex;
+            justify-content: center; 
+            align-items: flex-start; 
+            width: 100%; 
+            flex-wrap: wrap; 
+        }
+        .chart, #explanation-box-container { 
+            width: calc(33% - 20px);
+            min-width: 300px; 
+            height: 320px; 
+            margin: 5px; 
+            display: flex;
+            flex-direction: column;
+            align-items: center; 
+            border: 1px solid #eee;
+            padding-top: 10px; 
+        }
+        #explanation-box-container {
+            width: calc(33% - 20px);
+            min-width: 300px;
+            height: 320px;
+            margin: 5px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: none;
+            background: transparent;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 1px solid #ccc;
+            padding: 8px 10px;
+            border-radius: 5px;
+            box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.2);
+            font-size: 12px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease-in-out;
+            line-height: 1.4;
+            color: #333;
+            max-width: 300px;
+            z-index: 10;
+        }
+        .axis path,
+        .axis line {
+            fill: none;
+            stroke: #ccc;
+            shape-rendering: crispEdges;
+        }
+        .axis text {
+            font-size: 10px; 
+            fill: #555;
+        }
+        .label {
+            font-size: 10px;
+            fill: #333;
+            pointer-events: none;
+            text-anchor: start;
+        }
+        .bar:hover {
+            opacity: 0.7;
+            cursor: pointer;
+        }
+        .bottom-right-text {
+            font-size: 13px;
+            color:black;
+            text-align: center;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+    <h2>Xác suất bán Mặt hàng theo Nhóm hàng</h2> 
+    <div class="chart-row">
+        <div class="chart" id="chart1"></div>
+        <div class="chart" id="chart2"></div>
+        <div class="chart" id="chart3"></div>
+    </div>
+    <div class="chart-row">
+        <div class="chart" id="chart4"></div>
+        <div class="chart" id="chart5"></div>
+        <div id="explanation-box-container">
+            <div class="bottom-right-text">
+                [221124029127] [Đinh Trần Công Nghĩa] [48K29.1]
+            </div>
+        </div>
+    </div>
+    <div class="tooltip" id="tooltip"></div>
+    <script>
+        const BaseWidth = 450; 
+        const BaseHeight = 280; 
+        const BaseMargin = { top: 20, right: 40, bottom: 20, left: 50 }; 
+
+        const tooltip = d3.select("#tooltip");
+        const FormatPercent = d3.format(".1%");
+        const FormatComma = d3.format(",");
+
+        // Hàm điều chỉnh vị trí tooltip
+        function AdjustTooltipPosition(event, tooltip) {
+            const TooltipNode = tooltip.node();
+            const TooltipWidth = TooltipNode.offsetWidth;
+            const TooltipHeight = TooltipNode.offsetHeight;
+            const WindowWidth = window.innerWidth;
+            const WindowHeight = window.innerHeight;
+
+            let left = event.pageX + 15;
+            let top = event.pageY - 10; 
+
+            if (left + TooltipWidth > WindowWidth) {
+                left = event.pageX - TooltipWidth - 15;
+            }
+
+            if (top + TooltipHeight > WindowHeight) {
+                top = event.pageY - TooltipHeight - 10;
+            }
+            tooltip.style("left", `${left}px`)
+                .style("top", `${top}px`);
+        }
+
+        d3.csv("dataset/data_ggsheet-data.csv").then(rawData => {
+            const nestedData = d3.rollup(
+                rawData,
+                v => {
+                    const TotalOrders = new Set(v.map(m => m["Mã đơn hàng"])).size;
+                    const Counts_Order_MH = d3.rollup(v,
+                        g => new Set(g.map(m => m["Mã đơn hàng"])).size, 
+                        m => `[${m["Mã mặt hàng"]}] ${m["Tên mặt hàng"]}` 
+                    );
+                    const Mat_Hang = Array.from(Counts_Order_MH).map(([key, Count_Orders_MatHang]) => ({
+                        MatHang: key,
+                        Count_Orders_MatHang: Count_Orders_MatHang,
+                        probability: TotalOrders > 0 ? Count_Orders_MatHang / TotalOrders : 0
+                    }));
+                    Mat_Hang.sort((a, b) => b.probability - a.probability);
+                    return Mat_Hang; 
+                },
+                d => `[${d["Mã nhóm hàng"]}] ${d["Tên nhóm hàng"]}`
+            );
+
+            const Counts_MH = new Set();
+            nestedData.forEach((Mat_Hang) => {
+                Mat_Hang.forEach(item => Counts_MH.add(item.MatHang));
+            });
+            const uniqueMH = Array.from(Counts_MH);
+
+            const color = d3.scaleOrdinal(d3.schemeTableau10)
+                            .domain(uniqueMH); 
+
+            let chartIndex = 1;
+            nestedData.forEach((Mat_Hang, TenNhomHang) => {
+                if (chartIndex > 5) return; 
+
+                const chartId = `chart${chartIndex}`;
+                const container = d3.select(`#${chartId}`);
+                container.append("div")
+                        .attr("class", "chart-title")
+                        .text(TenNhomHang);
+
+                const LongestLabelLength = d3.max(Mat_Hang, d => d.MatHang.length) || 10;
+                const DynamicLeftMargin = Math.max(BaseMargin.left, LongestLabelLength * 5.2); 
+                const CurrentWidth = BaseWidth - DynamicLeftMargin - BaseMargin.right;
+                const CurrentHeight = BaseHeight - BaseMargin.top - BaseMargin.bottom;
+                const svg = container.append("svg")
+                                    .attr("width", CurrentWidth + DynamicLeftMargin + BaseMargin.right)
+                                    .attr("height", CurrentHeight + BaseMargin.top + BaseMargin.bottom)
+                                    .append("g")
+                                    .attr("transform", `translate(${DynamicLeftMargin},${BaseMargin.top})`);
+
+                const y = d3.scaleBand()
+                    .domain(Mat_Hang.map(d => d.MatHang))
+                    .range([0, CurrentHeight])
+                    .padding(0.2);
+
+                const x = d3.scaleLinear()
+                    .domain([0, d3.max(Mat_Hang, d => d.probability) || 0.1])
+                    .nice()
+                    .range([0, CurrentWidth]);
+                
+                svg.append("g")
+                    .attr("class", "y-axis axis")
+                    .call(d3.axisLeft(y)
+                            .tickSize(0));
+
+                svg.append("g")
+                    .attr("class", "x-axis axis")
+                    .attr("transform", `translate(0, ${CurrentHeight})`)
+                    .call(d3.axisBottom(x)
+                        .ticks(5)
+                        .tickFormat(d => Math.round(d * 100) + "%")
+                        .tickSize(-CurrentHeight) 
+                        .tickSizeOuter(0))
+                    .selectAll(".tick line")
+                    .attr("stroke", "#ccc"); 
+
+                svg.selectAll(".bar")
+                    .data(Mat_Hang)
+                    .enter()
+                    .append("rect")
+                    .attr("class", "bar")
+                    .attr("y", d => y(d.MatHang))
+                    .attr("x", 0)
+                    .attr("height", y.bandwidth())
+                    .attr("width", d => Math.max(0, x(d.probability)))
+                    .attr("fill", d => color(d.MatHang)) 
+                    .on("mouseover", function (event, d) {
+                        tooltip.style("display", "block");
+                        setTimeout(() => tooltip.style("opacity", 1), 10);
+                        tooltip.html(`
+                                   Mặt hàng: <strong>${d.MatHang}</strong><br>
+                                   Nhóm hàng: ${TenNhomHang}<br>
+                                   SL Đơn Bán: <strong>${FormatComma(d.Count_Orders_MatHang)} SKUs</strong> <br>
+                                   Xác suất bán/Nhóm hàng: <strong>${Math.round(d.probability * 100)}%</strong>`);
+                    
+                        AdjustTooltipPosition(event, tooltip); 
+                    })
+                    .on("mousemove", function (event) {
+                        AdjustTooltipPosition(event, tooltip);
+                    })
+                    .on("mouseout", function () {
+                        tooltip.style("opacity", 0);
+                    });
+
+                svg.selectAll(".label")
+                    .data(Mat_Hang)
+                    .enter()
+                    .append("text")
+                    .attr("class", "label")
+                    .attr("x", d => x(d.probability) + 4) 
+                    .attr("y", d => y(d.MatHang) + y.bandwidth() / 2)
+                    .attr("dy", "0.35em") 
+                    .text(d => FormatPercent(d.probability));
+                chartIndex++; 
+            });
+
+        }).catch(error => {
+            console.error("Lỗi khi load hoặc xử lý file CSV:", error);
+            d3.select("body").insert("p", ":first-child") 
+               .style("color", "red")
+               .style("text-align", "center")
+               .text("Đã xảy ra lỗi khi tải hoặc xử lý dữ liệu. Vui lòng kiểm tra console (F12).");
+        });
+    </script>
+    <script src="js/navigation.js"></script>
+</body>
+</html>

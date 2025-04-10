@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Q7</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <link rel="stylesheet" href="css/style_shared.css"> 
+  <div id="global-navigation">
+  </div>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    h2 {
+      padding: 5px;
+      text-align: left;
+      color: black;
+      font-size: 13px;
+    }
+    .bar:hover {
+      opacity: 0.8;
+    }
+    .tooltip {
+      position: absolute;
+      background-color: white;
+      border: 1px solid #ccc;
+      padding: 7px;
+      border-radius: 5px;
+      box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+      font-size: 13px;
+      display: none;
+    }
+    #chart {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-top: 20px;
+    }
+    *{
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+    <h2>[221124029127] [Đinh Trần Công Nghĩa] [48K29.1]</h2>
+    <div id="chart"></div>
+    <div class="tooltip"></div>
+
+  <script>
+    const margin = {top: 50, right: 70, bottom: 20, left: 150},
+          width = 1000 - margin.left - margin.right,
+          height = 500 - margin.top - margin.bottom;
+
+    const svg = d3.select("#chart")
+                  .append("svg")
+                  .attr("width", width + margin.left + margin.right)
+                  .attr("height", height + margin.top + margin.bottom)
+                  .append("g")
+                  .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const tooltip = d3.select(".tooltip");
+
+    d3.csv("dataset/data_ggsheet-data.csv").then(rawData => {
+      const TotalOrders = new Set(rawData.map(d => d["Mã đơn hàng"])).size;
+      const NestedData = d3.rollup(
+        rawData,
+        v => ({ count: new Set(v.map(d => d["Mã đơn hàng"])).size, total: v.length }),
+        d => d["Mã nhóm hàng"],
+        d => d["Tên nhóm hàng"]
+      );
+
+      let data = [];
+      NestedData.forEach((tenNhom, MaNhom) => {
+        tenNhom.forEach((stats, TenNhom) => {
+          data.push({
+            MaNhomHang: MaNhom,
+            Tennhomhang: TenNhom,
+            probability: stats.count / TotalOrders,
+            Count_Orders_Nhom: stats.count
+          });
+        });
+      });
+
+      data.sort((a, b) => b.probability - a.probability);
+      data.forEach(d => d.label = `[${d.MaNhomHang}] ${d.Tennhomhang}`);
+
+      const color = d3.scaleOrdinal()
+                      .domain(data.map(d => d.Tennhomhang))
+                      .range(d3.schemeTableau10);
+
+      const y = d3.scaleBand()
+                  .domain(data.map(d => d.label))
+                  .range([0, height])
+                  .padding(0.2);
+
+      const x = d3.scaleLinear()
+                  .domain([0, d3.max(data, d => d.probability)])
+                  .nice()
+                  .range([0, width]);
+
+      svg.append("text")
+         .attr("x", width / 2)  
+         .attr("y",-30)  
+         .attr("text-anchor", "middle")  
+         .style("font-size", "20px")  
+         .style("fill", "#4e79a7")  
+         .style("font-weight", "bold")  
+         .text("Xác suất bán hàng theo Nhóm hàng");
+        
+      svg.append("g")
+         .attr("class", "grid")
+         .attr("transform", `translate(0, ${height})`)
+         .call(d3.axisBottom(x)
+                 .ticks(5)
+                 .tickSize(-height)
+                 .tickFormat("")
+                 )
+         .selectAll("line")
+         .style("stroke", "#ccc")
+         .attr("stroke-opacity",0.8); 
+
+      svg.selectAll(".domain").remove();
+
+      svg.append("g")
+         .call(d3.axisLeft(y)
+                 .tickSizeOuter(0)
+                 .tickSize(0))
+         .style("font-size", "13px")
+         .selectAll("path, line")
+         .attr("stroke", "#ccc");
+
+      svg.append("g")
+         .attr("transform", `translate(0, ${height})`)
+         .call(d3.axisBottom(x)
+                 .ticks(5)
+                 .tickFormat(d3.format(".0%")))
+        .style("font-size", "13px")
+         .selectAll("path, line")
+         .attr("stroke", "#ccc");
+
+      svg.selectAll(".bar")
+         .data(data)
+         .enter()
+         .append("rect")
+         .attr("class", "bar")
+         .attr("y", d => y(d.label))
+         .attr("x", 0)
+         .attr("height", y.bandwidth())
+         .attr("width", d => x(d.probability))
+         .attr("fill", d => color(d.Tennhomhang))
+         .on("mouseover", function(event, d) {
+          tooltip.style("opacity", 1)
+                 .style("display", "block")
+                 .html(`<strong>Nhóm hàng:</strong> ${d.label}<br>
+                        <strong>SL đơn bán:</strong> ${d3.format(",.0f")(d.Count_Orders_Nhom)} SKUs<br>
+                        <strong>Xác suất bán:</strong> ${d3.format(".1%")(d.probability)}`)
+                 .style("left", `${event.pageX + 10}px`)
+                 .style("top", `${event.pageY - 20}px`);
+          })
+         .on("mousemove", function(event) {
+          tooltip.style("left", (event.pageX + 10) + "px")
+                 .style("top", (event.pageY - 20) + "px");
+          })
+         .on("mouseout", function() {
+            tooltip.style("display", "none");
+          });
+
+      svg.selectAll(".label")
+         .data(data)
+         .enter()
+         .append("text")
+         .attr("x", d => x(d.probability) + 5)
+         .attr("y", d => y(d.label) + y.bandwidth() / 2)
+         .attr("dy", "0.35em")
+         .attr("text-anchor", "start")
+         .style('font-size','13px')
+         .text(d => d3.format(".1%")(d.probability));
+
+    }).catch(error => {
+      console.error("Lỗi khi load file CSV:", error);
+    });
+  </script>
+  <script src="js/navigation.js"></script>
+</body>
+</html>
